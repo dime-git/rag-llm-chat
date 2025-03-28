@@ -115,7 +115,7 @@ rag-llm-chat/
 └── README.md          # This file
 ```
 
-## Dependencies
+## Dependencies used
 
 Key dependencies include:
 
@@ -128,4 +128,3 @@ Key dependencies include:
 - `python-magic`: File type detection
 - `pdf2image`: PDF processing
 - `pytesseract`: OCR capabilities
-ECHO is on.
