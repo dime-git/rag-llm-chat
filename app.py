@@ -32,7 +32,7 @@ st.set_page_config(
     initial_sidebar_state = "expanded"
 )
 
-st.html("""<h2 style="text-align: center;"><i>Do you LLM even RAG broski?<i></h2>""")
+st.html("""<h1 style="text-align: center;"><i>Do you LLM even RAG broski?<i></h1>""")
 
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
