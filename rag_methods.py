@@ -198,30 +198,34 @@ def initialize_vector_db(documents_chunks):
         # Check if OpenAI API key is available
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if not openai_api_key:
-            st.error("OpenAI API key not found. Please add your API key in the sidebar.")
+            openai_api_key = st.session_state.get('openai_api_key')
+        
+        if not openai_api_key:
+            st.error("OpenAI API key is required for document embeddings")
             return None
 
-        print("Initializing vector database...")  # Debug log
-        
+        # Configure ChromaDB settings for cloud environment
+        chroma_settings = Settings(
+            anonymized_telemetry=False,
+            is_persistent=False,  # Use in-memory storage for cloud deployment
+            allow_reset=True
+        )
+
+        # Initialize embeddings
         embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
         
-        # Create an in-memory Chroma instance
-        vector_db = Chroma(
-            collection_name=f"collection_{str(time()).replace('.', '')[:14]}",
-            embedding_function=embeddings,
+        # Create vector store with configured settings
+        vector_db = Chroma.from_documents(
+            documents=documents_chunks,
+            embedding=embeddings,
+            client_settings=chroma_settings
         )
         
-        # Add documents to the collection
-        vector_db.add_documents(documents_chunks)
-        
         return vector_db
+
     except Exception as e:
-        error_msg = str(e)
-        if "API key" in error_msg:
-            st.error("Invalid OpenAI API key. Please check your API key in the sidebar.")
-        else:
-            st.error(f"Error initializing vector database: {error_msg}")
-        print(f"Error initializing vector database: {error_msg}")
+        st.error(f"Error initializing vector database: {str(e)}")
+        print(f"Vector DB initialization error: {str(e)}")  # Debug log
         return None
 
 
