@@ -7,7 +7,12 @@ from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain.schema import HumanMessage, AIMessage
 
-from rag_methods import stream_llm_response
+from rag_methods import (
+    load_url_to_db,
+    load_doc_to_db,
+    stream_llm_response,
+    stream_llm_rag_response,
+)
 
 dotenv.load_dotenv()
 
@@ -71,8 +76,38 @@ else:
             [model for model in MODELS if ("openai" in model and not missing_openai_key) or ("anthropic" in model and not missing_anthropic_key)], key="model"
         )
         cols = st.columns(2)
+        with cols[0]:
+            is_vector_db_loaded = ("vector_db" in st.session_state and st.session_state.vector_db is not None)
+            st.toggle(
+                "Use RAG",
+                value=is_vector_db_loaded,
+                key="use_rag",
+                disabled=not is_vector_db_loaded
+            ) 
+
         with cols[1]:
             st.button("Clear Chat", on_click=lambda: st.session_state.messages.clear(), type="primary")
+
+        st.header("RAG Sources:")
+
+        #File upload input for RAG with documents
+        st.file_uploader(
+            "Upload document",
+            type=["pdf","txt","docx","md"],
+            accept_multiple_files=True,
+            on_change=load_doc_to_db,
+            key="rag_docs"
+        )
+
+        st.text_input(
+            "Paste your URL",
+            placeholder="https://example.com",
+            on_change=load_doc_to_db,
+            key="rag_url"
+        )
+
+        with st.expander(f"Documents in DB ({0 if not is_vector_db_loaded else len(st.session_state.vector_db.get()['metadatas'])})"):
+            st.write([] if not is_vector_db_loaded else [meta['source'] for meta in st.session_state.vector_db.get()['metadatas']])
 
     #main chat app
     model_provider = st.session_state.model.split("/")[0]
@@ -102,9 +137,14 @@ else:
             messages = [HumanMessage(content=m["content"]) if m["role"] == "user" else AIMessage(content=m["content"]) for m in st.session_state.messages]
             message_placeholder = st.empty()
             response = ""
-            for chunk in stream_llm_response(llm_stream, messages):
-                response += chunk
-                message_placeholder.markdown(response)
+            
+            if not st.session_state.use_rag:
+                for chunk in stream_llm_response(llm_stream, messages):
+                    response += chunk
+                    message_placeholder.markdown(response)
+            else:
+                for chunk in stream_llm_rag_response(llm_stream, messages):
+                    response += chunk
+                    message_placeholder.markdown(response)
             
             st.session_state.messages.append({"role": "assistant", "content": response})
-
