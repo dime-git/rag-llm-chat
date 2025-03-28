@@ -19,7 +19,7 @@ dotenv.load_dotenv()
 MODELS = [
     # "openai/o1-mini",
     "openai/gpt-4o",
-    "claude-3-5-sonnet-20240620"
+    "anthropic/claude-3-sonnet-20240229"  # Fixed model name format
 ]
 
 st.set_page_config(
@@ -62,18 +62,26 @@ with st.sidebar:
 
 #Checking if the user has introduced the OpenAI API Key, if not, a warning is displayed
 missing_openai_key = open_ai_api_key == "" or open_ai_api_key is None or "sk-" not in open_ai_api_key
-missing_anthropic_key = anthropic_ai_api_key == "" or anthropic_ai_api_key is None
+missing_anthropic_key = anthropic_ai_api_key == "" or anthropic_ai_api_key is None or len(anthropic_ai_api_key) < 10
+
 if missing_openai_key and missing_anthropic_key:
     st.write("#")
     st.warning("Please enter your API Key to continue...")
-
 else:
     #sidebar
     with st.sidebar:
         st.divider()
+        available_models = [
+            model for model in MODELS 
+            if ("openai" in model.lower() and not missing_openai_key) or 
+               ("claude" in model.lower() and not missing_anthropic_key)
+        ]
+        if not available_models:
+            st.warning("No models available. Please check your API keys.")
         st.selectbox(
             "Select a model",
-            [model for model in MODELS if ("openai" in model and not missing_openai_key) or ("anthropic" in model and not missing_anthropic_key)], key="model"
+            available_models,
+            key="model"
         )
         cols = st.columns(2)
         with cols[0]:
@@ -102,49 +110,65 @@ else:
         st.text_input(
             "Paste your URL",
             placeholder="https://example.com",
-            on_change=load_doc_to_db,
+            on_change=load_url_to_db,
             key="rag_url"
         )
 
-        with st.expander(f"Documents in DB ({0 if not is_vector_db_loaded else len(st.session_state.vector_db.get()['metadatas'])})"):
-            st.write([] if not is_vector_db_loaded else [meta['source'] for meta in st.session_state.vector_db.get()['metadatas']])
+        with st.expander(f"Documents in DB ({0 if not is_vector_db_loaded else len(st.session_state.rag_sources)})"):
+            st.write([] if not is_vector_db_loaded else [source for source in st.session_state.rag_sources])
 
     #main chat app
-    model_provider = st.session_state.model.split("/")[0]
-    if model_provider == "openai":
-        llm_stream = ChatOpenAI(
-            model_name = st.session_state.model.split("/")[-1],
-            temperature=0.3,
-            streaming=True
-        )
-    elif model_provider == "anthropic":
-        llm_stream = ChatAnthropic(
-            model_name = st.session_state.model.state("/")[-1],
-            temperature=0.3,
-            streaming=True
-        )
+    try:
+        model_provider = st.session_state.model.split("/")[0]
+        if model_provider == "openai":
+            llm_stream = ChatOpenAI(
+                model_name = st.session_state.model.split("/")[-1],
+                temperature=0.3,
+                streaming=True,
+                openai_api_key=open_ai_api_key
+            )
+        elif model_provider == "anthropic":
+            llm_stream = ChatAnthropic(
+                model_name = st.session_state.model.split("/")[-1],
+                temperature=0.3,
+                streaming=True,
+                anthropic_api_key=anthropic_ai_api_key
+            )
+        else:
+            st.error(f"Unknown model provider: {model_provider}")
+            llm_stream = None
+    except Exception as e:
+        st.error(f"Error initializing model: {str(e)}")
+        llm_stream = None
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    # Only proceed if we have a valid model
+    if llm_stream is not None:
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
 
-    if prompt := st.chat_input("Your message"):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        if prompt := st.chat_input("Your message"):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
 
-        with st.chat_message("assistant"):
-            messages = [HumanMessage(content=m["content"]) if m["role"] == "user" else AIMessage(content=m["content"]) for m in st.session_state.messages]
-            message_placeholder = st.empty()
-            response = ""
-            
-            if not st.session_state.use_rag:
-                for chunk in stream_llm_response(llm_stream, messages):
-                    response += chunk
-                    message_placeholder.markdown(response)
-            else:
-                for chunk in stream_llm_rag_response(llm_stream, messages):
-                    response += chunk
-                    message_placeholder.markdown(response)
-            
-            st.session_state.messages.append({"role": "assistant", "content": response})
+            with st.chat_message("assistant"):
+                messages = [HumanMessage(content=m["content"]) if m["role"] == "user" else AIMessage(content=m["content"]) for m in st.session_state.messages]
+                message_placeholder = st.empty()
+                response = ""
+                
+                try:
+                    if not st.session_state.use_rag:
+                        for chunk in stream_llm_response(llm_stream, messages):
+                            response += chunk
+                            message_placeholder.markdown(response)
+                    else:
+                        for chunk in stream_llm_rag_response(llm_stream, messages):
+                            response += chunk
+                            message_placeholder.markdown(response)
+                    
+                    if response:  # Only append if we got a response
+                        st.session_state.messages.append({"role": "assistant", "content": response})
+                except Exception as e:
+                    st.error(f"Error generating response: {str(e)}")
+                    print(f"Error generating response: {str(e)}")  # Debug log
