@@ -128,3 +128,4 @@ Key dependencies include:
 - `python-magic`: File type detection
 - `pdf2image`: PDF processing
 - `pytesseract`: OCR capabilities
+ECHO is on.
